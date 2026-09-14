@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投開票所狀況回報</title>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f4f5f7; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        h2 { text-align: center; color: #333; margin-top: 0; margin-bottom: 20px; font-size: 22px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #555; }
+        input, select, textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-family: inherit; }
+        textarea { resize: vertical; min-height: 80px; }
+        button { width: 100%; padding: 14px; background-color: #06C755; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #error-box { display: none; background: #fee; color: #c00; padding: 15px; border-radius: 6px; margin-bottom: 20px; font-weight: bold; word-break: break-all; }
+        .hidden { display: none; }
+        .readonly-input { background-color: #e9ecef; cursor: not-allowed; color: #495057; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🗳️ 投開票所狀況回報</h2>
+        <div id="error-box"></div>
+        <form id="reportForm">
+            <div class="form-group">
+                <label>投開票所編號</label>
+                <input type="text" id="stationNumber" placeholder="正在同步資料..." required>
+            </div>
+            <div class="form-group">
+                <label>回報事項</label>
+                <select id="reportType" required onchange="toggleDetails()">
+                    <option value="">請選擇回報事項</option>
+                    <option value="抵達票所">✅ 已安全抵達票所</option>
+                    <option value="選務工具短缺">⚠️ 選務工具短缺 (需說明)</option>
+                </select>
+            </div>
+            <div class="form-group hidden" id="detailsGroup">
+                <label>請說明短缺項目與數量</label>
+                <textarea id="details" placeholder="例如：印泥少 2 個、封條少 1 張..."></textarea>
+            </div>
+            <button type="submit" id="submitBtn" disabled>讀取 LINE 資料中...</button>
+        </form>
+    </div>
+
+    <script>
+        // ==========================================
+        // ★ 共用同一個 LIFF ID
+        const liffId = "2011580579-G79pexTV"; 
+        
+        // 萬能 GAS 網址 (與報到頁相同)
+        const gasUrl = "https://script.google.com/macros/s/AKfycbwUoTD9j7GtztnmnCoCLmeTpXMbAlT4RW1uNdzyhjaGPjM9iqFawN6ENCkqaqw6ceF4zg/exec";
+        // ==========================================
+
+        let userProfile = null;
+        const btn = document.getElementById('submitBtn');
+
+        function toggleDetails() {
+            const reportType = document.getElementById('reportType').value;
+            const detailsGroup = document.getElementById('detailsGroup');
+            if (reportType === '選務工具短缺') {
+                detailsGroup.classList.remove('hidden');
+                document.getElementById('details').required = true;
+            } else {
+                detailsGroup.classList.add('hidden');
+                document.getElementById('details').required = false;
+                document.getElementById('details').value = ''; 
+            }
+        }
+
+        async function initializeLiff() {
+            try {
+                await liff.init({ liffId: liffId });
+                if (liff.isLoggedIn()) {
+                    userProfile = await liff.getProfile();
+                    
+                    btn.innerText = "同步報到資料中...";
+                    try {
+                        const response = await fetch(gasUrl + "?userId=" + userProfile.userId);
+                        const result = await response.json();
+                        const stationInput = document.getElementById('stationNumber');
+                        
+                        if (result.station) {
+                            stationInput.value = result.station;
+                            stationInput.readOnly = true; 
+                            stationInput.classList.add('readonly-input');
+                        } else {
+                            stationInput.placeholder = "查無資料，請手動輸入";
+                        }
+                    } catch(err) {
+                        document.getElementById('stationNumber').placeholder = "查詢失敗，請手動輸入";
+                    }
+
+                    btn.disabled = false;
+                    btn.innerText = "送出回報";
+                } else {
+                    liff.login();
+                }
+            } catch (err) {
+                document.getElementById('error-box').style.display = 'block';
+                document.getElementById('error-box').innerText = "載入失敗：" + err.message;
+            }
+        }
+
+        initializeLiff();
+
+        document.getElementById('reportForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            btn.disabled = true;
+            btn.innerText = "資料傳送中...";
+
+            const data = {
+                displayName: userProfile ? userProfile.displayName : "未授權",
+                stationNumber: document.getElementById('stationNumber').value,
+                reportType: document.getElementById('reportType').value,
+                details: document.getElementById('details').value
+            };
+
+            try {
+                await fetch(gasUrl, { method: 'POST', body: JSON.stringify(data) });
+                alert('回報成功！辛苦了！');
+                liff.closeWindow(); 
+            } catch (error) {
+                document.getElementById('error-box').style.display = 'block';
+                document.getElementById('error-box').innerText = "傳送失敗：" + error.message;
+                btn.disabled = false;
+                btn.innerText = "重新送出回報";
+            }
+        });
+    </script>
+</body>
+</html>
